@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -54,13 +55,13 @@ func Load() (*Config, error) {
 		ListenAddr:        l.str("LISTEN_ADDR", ":8080"),
 		StoreDriver:       l.str("STORE_DRIVER", "sqlite"),
 		SQLitePath:        l.str("SQLITE_PATH", "std-login.db"),
-		JWTIssuer:         l.str("JWT_ISSUER", "std-login"),
+		JWTIssuer:         l.str("JWT_ISSUER", ""),
 		JWTAudience:       l.list("JWT_AUDIENCE"),
 		JWTPrivateKeyFile: l.str("JWT_PRIVATE_KEY_FILE", ""),
 		AccessTTL:         l.dur("ACCESS_TOKEN_TTL", 15*time.Minute),
 		RefreshTTL:        l.dur("REFRESH_TOKEN_TTL", 30*24*time.Hour),
 		LoginTokenTTL:     l.dur("LOGIN_TOKEN_TTL", 10*time.Minute),
-		LoginLinkURL:      l.str("LOGIN_LINK_URL", "http://localhost:3000/login"),
+		LoginLinkURL:      l.str("LOGIN_LINK_URL", ""),
 		AllowSignup:       l.bool("ALLOW_SIGNUP", true),
 		MaxFailedLogins:   l.int("MAX_FAILED_LOGINS", 10),
 		LockoutDuration:   l.dur("LOCKOUT_DURATION", 15*time.Minute),
@@ -80,6 +81,15 @@ func Load() (*Config, error) {
 	if l.err != nil {
 		return nil, l.err
 	}
+	if c.Dev {
+		// Placeholders for local runs only; production must set these.
+		if c.JWTIssuer == "" {
+			c.JWTIssuer = "std-login-dev"
+		}
+		if c.LoginLinkURL == "" {
+			c.LoginLinkURL = "http://localhost:3000/login"
+		}
+	}
 	return c, c.validate()
 }
 
@@ -94,6 +104,15 @@ func (c *Config) validate() error {
 		if c.StoreDriver == "memory" {
 			return fmt.Errorf("STORE_DRIVER=memory loses all data on restart; set DEV=true to allow it")
 		}
+		if c.JWTIssuer == "" {
+			return fmt.Errorf("JWT_ISSUER is required, e.g. https://login.example.com")
+		}
+		if len(c.JWTAudience) == 0 {
+			return fmt.Errorf("JWT_AUDIENCE is required so tokens are scoped to the apps that should accept them")
+		}
+	}
+	if err := c.validateLoginLinkURL(); err != nil {
+		return err
 	}
 	switch c.RateLimitDriver {
 	case "memory":
@@ -109,6 +128,22 @@ func (c *Config) validate() error {
 	}
 	if c.AccessTTL <= 0 || c.RefreshTTL <= 0 || c.LoginTokenTTL <= 0 {
 		return fmt.Errorf("token TTLs must be positive")
+	}
+	return nil
+}
+
+// validateLoginLinkURL requires an absolute URL. Outside dev it must be https:
+// the emailed link carries a login token.
+func (c *Config) validateLoginLinkURL() error {
+	if c.LoginLinkURL == "" {
+		return fmt.Errorf("LOGIN_LINK_URL is required, e.g. https://app.example.com/login")
+	}
+	u, err := url.Parse(c.LoginLinkURL)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return fmt.Errorf("LOGIN_LINK_URL must be an absolute URL, got %q", c.LoginLinkURL)
+	}
+	if u.Scheme != "https" && !c.Dev {
+		return fmt.Errorf("LOGIN_LINK_URL must use https (login tokens are in the link); set DEV=true to allow http")
 	}
 	return nil
 }

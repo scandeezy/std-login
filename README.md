@@ -32,4 +32,13 @@ There is no separate registration call. The first time an address completes an e
 
 ## Configuration
 
-Configuration comes from environment variables; see [`internal/config/config.go`](internal/config/config.go) for the full list and defaults. Outside `DEV=true`, the service refuses to start without `JWT_PRIVATE_KEY_FILE` (generate one with `make keygen`), a real mail driver (`MAIL_DRIVER=smtp`), and a persistent store.
+Configuration comes from environment variables; see [`internal/config/config.go`](internal/config/config.go) for the full list and defaults. Outside `DEV=true`, the service refuses to start unless all of these are set:
+
+- `JWT_PRIVATE_KEY_FILE` (generate one with `make keygen`)
+- `JWT_ISSUER`, typically the service's public URL
+- `JWT_AUDIENCE`, the apps that should accept its tokens
+- `LOGIN_LINK_URL`, an absolute `https` URL for emailed login links
+- a real mail driver (`MAIL_DRIVER=smtp`)
+- a persistent store
+
+With `DEV=true`, the issuer and login link fall back to local placeholders.
