@@ -16,11 +16,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/scandeezy/std-login/internal/auth"
 	"github.com/scandeezy/std-login/internal/config"
 	"github.com/scandeezy/std-login/internal/mail"
 	"github.com/scandeezy/std-login/internal/password"
 	"github.com/scandeezy/std-login/internal/ratelimit"
+	"github.com/scandeezy/std-login/internal/ratelimit/redislimit"
 	"github.com/scandeezy/std-login/internal/server"
 	"github.com/scandeezy/std-login/internal/store"
 	"github.com/scandeezy/std-login/internal/store/memory"
@@ -76,14 +79,20 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("unknown MAIL_DRIVER %q", cfg.MailDriver)
 	}
 
+	ipLimiter, emailLimiter, closeLimiters, err := newLimiters(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer closeLimiters()
+
 	svc := auth.New(auth.Config{
 		Store:             st,
 		Hasher:            password.NewHasher(password.DefaultParams),
 		Issuer:            issuer,
 		Mailer:            sender,
 		Logger:            logger,
-		IPLimiter:         ratelimit.NewMemory(cfg.RateLimitPerIP, time.Minute),
-		EmailLimiter:      ratelimit.NewMemory(cfg.RateLimitPerEmail, time.Hour),
+		IPLimiter:         ipLimiter,
+		EmailLimiter:      emailLimiter,
 		RefreshTTL:        cfg.RefreshTTL,
 		LoginTokenTTL:     cfg.LoginTokenTTL,
 		LoginLinkURL:      cfg.LoginLinkURL,
@@ -137,6 +146,28 @@ func openStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
 	default:
 		return nil, fmt.Errorf("unknown STORE_DRIVER %q", cfg.StoreDriver)
 	}
+}
+
+func newLimiters(ctx context.Context, cfg *config.Config) (ip, email ratelimit.Limiter, closeFn func(), err error) {
+	if cfg.RateLimitDriver != "redis" {
+		return ratelimit.NewMemory(cfg.RateLimitPerIP, time.Minute),
+			ratelimit.NewMemory(cfg.RateLimitPerEmail, time.Hour),
+			func() {}, nil
+	}
+	opts, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("REDIS_URL: %w", err)
+	}
+	// Bound how long a slow Redis can stall a login; errors fail open.
+	opts.DialTimeout, opts.ReadTimeout, opts.WriteTimeout = time.Second, 500*time.Millisecond, 500*time.Millisecond
+	client := redis.NewClient(opts)
+	if err := client.Ping(ctx).Err(); err != nil {
+		client.Close()
+		return nil, nil, nil, fmt.Errorf("connect to redis: %w", err)
+	}
+	return redislimit.New(client, "std-login:rl:ip:", cfg.RateLimitPerIP, time.Minute),
+		redislimit.New(client, "std-login:rl:email:", cfg.RateLimitPerEmail, time.Hour),
+		func() { client.Close() }, nil
 }
 
 func loadKey(cfg *config.Config, logger *slog.Logger) (ed25519.PrivateKey, error) {

@@ -46,7 +46,9 @@ type Config struct {
 	Mailer mailer.Sender
 	Logger *slog.Logger
 
-	// IPLimiter throttles unauthenticated RPCs per client IP.
+	// IPLimiter throttles unauthenticated RPCs per client IP. Limiter
+	// errors fail open (logged): account lockout still guards passwords,
+	// and a limiter outage should not become a login outage.
 	IPLimiter ratelimit.Limiter
 	// EmailLimiter throttles StartEmailLogin per target address.
 	EmailLimiter ratelimit.Limiter
@@ -140,13 +142,23 @@ func (s *Service) clientIP(h interface{ Get(string) string }, peer string) strin
 	return peer
 }
 
-func (s *Service) allowIP(req connect.AnyRequest, now time.Time) bool {
-	return s.cfg.IPLimiter.Allow("ip:"+s.clientIP(req.Header(), req.Peer().Addr), now)
+func (s *Service) allowIP(ctx context.Context, req connect.AnyRequest, now time.Time) bool {
+	return s.allow(ctx, s.cfg.IPLimiter, "ip:"+s.clientIP(req.Header(), req.Peer().Addr), now)
+}
+
+// allow consults a limiter, failing open on error.
+func (s *Service) allow(ctx context.Context, l ratelimit.Limiter, key string, now time.Time) bool {
+	ok, err := l.Allow(ctx, key, now)
+	if err != nil {
+		s.cfg.Logger.ErrorContext(ctx, "rate limiter unavailable; allowing request", "err", err)
+		return true
+	}
+	return ok
 }
 
 func (s *Service) LoginWithPassword(ctx context.Context, req *connect.Request[stdloginv1.LoginWithPasswordRequest]) (*connect.Response[stdloginv1.LoginWithPasswordResponse], error) {
 	now := s.now()
-	if !s.allowIP(req, now) {
+	if !s.allowIP(ctx, req, now) {
 		return nil, errRateLimited
 	}
 	email, ok := NormalizeEmail(req.Msg.GetEmail())
@@ -211,7 +223,7 @@ func (s *Service) LoginWithPassword(ctx context.Context, req *connect.Request[st
 
 func (s *Service) StartEmailLogin(ctx context.Context, req *connect.Request[stdloginv1.StartEmailLoginRequest]) (*connect.Response[stdloginv1.StartEmailLoginResponse], error) {
 	now := s.now()
-	if !s.allowIP(req, now) {
+	if !s.allowIP(ctx, req, now) {
 		return nil, errRateLimited
 	}
 	email, ok := NormalizeEmail(req.Msg.GetEmail())
@@ -222,7 +234,7 @@ func (s *Service) StartEmailLogin(ctx context.Context, req *connect.Request[stdl
 
 	// Over the per-address limit: report success anyway so the response
 	// says nothing about the address, but send nothing (anti mail-bombing).
-	if !s.cfg.EmailLimiter.Allow("email:"+email, now) {
+	if !s.allow(ctx, s.cfg.EmailLimiter, "email:"+email, now) {
 		return resp, nil
 	}
 	if !s.cfg.AllowSignup {
@@ -268,7 +280,7 @@ func loginLink(base, tok string) (string, error) {
 
 func (s *Service) CompleteEmailLogin(ctx context.Context, req *connect.Request[stdloginv1.CompleteEmailLoginRequest]) (*connect.Response[stdloginv1.CompleteEmailLoginResponse], error) {
 	now := s.now()
-	if !s.allowIP(req, now) {
+	if !s.allowIP(ctx, req, now) {
 		return nil, errRateLimited
 	}
 	lt, err := s.cfg.Store.ConsumeLoginToken(ctx, token.Hash(req.Msg.GetLoginToken()))

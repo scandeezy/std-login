@@ -356,6 +356,20 @@ func TestRateLimits(t *testing.T) {
 	wantCode(t, start("c@example.com"), connect.CodeResourceExhausted)
 }
 
+type brokenLimiter struct{}
+
+func (brokenLimiter) Allow(context.Context, string, time.Time) (bool, error) {
+	return false, errors.New("redis: connection refused")
+}
+
+func TestRateLimiterErrorsFailOpen(t *testing.T) {
+	h := newHarness(t, func(c *auth.Config) {
+		c.IPLimiter = brokenLimiter{}
+		c.EmailLimiter = brokenLimiter{}
+	})
+	h.emailLogin(t, "a@example.com") // exercises both limiters
+}
+
 func TestJWKSEndpoint(t *testing.T) {
 	iss := token.NewIssuer(token.GenerateKey(), "test", nil, time.Minute)
 	srv := httptest.NewServer(server.Handler(auth.New(auth.Config{Issuer: iss}), iss))

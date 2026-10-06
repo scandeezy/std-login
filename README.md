@@ -22,6 +22,10 @@ curl -XPOST localhost:8080/stdlogin.v1.AuthService/CompleteEmailLogin \
   -H 'Content-Type: application/json' -d '{"loginToken":"..."}'
 ```
 
+## Running multiple instances
+
+Set `RATE_LIMIT_DRIVER=redis` and `REDIS_URL` so rate limits are shared across instances. The default in-memory limiter enforces limits per process. Users, tokens and sessions are already shared through the store.
+
 ## Account model
 
 There is no separate registration call. The first time an address completes an email login, an account is created for it (set `ALLOW_SIGNUP=false` to turn this off). The user can then call `SetPassword` with a recent access token. As a result, a password can only be attached to an address whose ownership has been proven. Email login also serves as "forgot password".

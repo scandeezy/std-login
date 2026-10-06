@@ -1,19 +1,24 @@
 // Package ratelimit provides fixed-window rate limiting keyed by arbitrary
 // strings (client IP, email address).
 //
-// Memory is per-process: when running several instances, replace it with a
-// shared implementation of Limiter (e.g. Redis) or limits multiply by the
-// instance count.
+// Memory is per process, so with several instances each one enforces its own
+// limit and the effective limit multiplies by the instance count. Use
+// redislimit for a limit shared across instances.
+//
+// Implementations must pass the conformance suite in ratelimit/ratelimittest.
 package ratelimit
 
 import (
+	"context"
 	"sync"
 	"time"
 )
 
 type Limiter interface {
-	// Allow records an event for key and reports whether it is within limit.
-	Allow(key string, now time.Time) bool
+	// Allow records an event for key and reports whether it is within
+	// limit. An error means the limiter could not decide; callers choose
+	// whether to fail open or closed.
+	Allow(ctx context.Context, key string, now time.Time) (bool, error)
 }
 
 type window struct {
@@ -35,7 +40,7 @@ func NewMemory(limit int, w time.Duration) *Memory {
 	return &Memory{Limit: limit, Window: w, windows: map[string]*window{}}
 }
 
-func (m *Memory) Allow(key string, now time.Time) bool {
+func (m *Memory) Allow(_ context.Context, key string, now time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if now.Sub(m.swept) > m.Window {
@@ -52,10 +57,10 @@ func (m *Memory) Allow(key string, now time.Time) bool {
 		m.windows[key] = w
 	}
 	w.count++
-	return w.count <= m.Limit
+	return w.count <= m.Limit, nil
 }
 
 // Unlimited allows everything.
 type Unlimited struct{}
 
-func (Unlimited) Allow(string, time.Time) bool { return true }
+func (Unlimited) Allow(context.Context, string, time.Time) (bool, error) { return true, nil }

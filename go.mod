@@ -10,7 +10,9 @@ tool (
 
 require (
 	connectrpc.com/connect v1.21.0
+	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/redis/go-redis/v9 v9.23.0
 	golang.org/x/crypto v0.57.0
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.60.1
@@ -82,6 +84,7 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.lsp.dev/jsonrpc2 v0.10.0 // indirect
 	go.lsp.dev/pkg v0.0.0-20210717090340-384b27a52fb2 // indirect
 	go.lsp.dev/protocol v0.12.0 // indirect
@@ -91,6 +94,7 @@ require (
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect

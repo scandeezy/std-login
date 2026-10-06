@@ -32,6 +32,11 @@ type Config struct {
 	RateLimitPerEmail int  // RATE_LIMIT_PER_EMAIL (login emails/hour)
 	TrustProxyHeaders bool // TRUST_PROXY_HEADERS
 
+	// RateLimitDriver: memory (per process) | redis (shared across
+	// instances). RATE_LIMIT_DRIVER
+	RateLimitDriver string
+	RedisURL        string // REDIS_URL, e.g. redis://user:pass@host:6379/0 (rediss:// for TLS)
+
 	MailDriver   string // MAIL_DRIVER: log | smtp
 	SMTPAddr     string // SMTP_ADDR
 	SMTPUsername string // SMTP_USERNAME
@@ -63,6 +68,8 @@ func Load() (*Config, error) {
 		RateLimitPerIP:    l.int("RATE_LIMIT_PER_IP", 30),
 		RateLimitPerEmail: l.int("RATE_LIMIT_PER_EMAIL", 5),
 		TrustProxyHeaders: l.bool("TRUST_PROXY_HEADERS", false),
+		RateLimitDriver:   l.str("RATE_LIMIT_DRIVER", "memory"),
+		RedisURL:          l.str("REDIS_URL", ""),
 		MailDriver:        l.str("MAIL_DRIVER", "log"),
 		SMTPAddr:          l.str("SMTP_ADDR", ""),
 		SMTPUsername:      l.str("SMTP_USERNAME", ""),
@@ -87,6 +94,15 @@ func (c *Config) validate() error {
 		if c.StoreDriver == "memory" {
 			return fmt.Errorf("STORE_DRIVER=memory loses all data on restart; set DEV=true to allow it")
 		}
+	}
+	switch c.RateLimitDriver {
+	case "memory":
+	case "redis":
+		if c.RedisURL == "" {
+			return fmt.Errorf("RATE_LIMIT_DRIVER=redis requires REDIS_URL")
+		}
+	default:
+		return fmt.Errorf("unknown RATE_LIMIT_DRIVER %q", c.RateLimitDriver)
 	}
 	if c.MailDriver == "smtp" && (c.SMTPAddr == "" || c.MailFrom == "") {
 		return fmt.Errorf("MAIL_DRIVER=smtp requires SMTP_ADDR and MAIL_FROM")

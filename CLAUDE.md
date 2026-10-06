@@ -9,7 +9,8 @@ A Go login service that issues JWTs. It handles **authentication only**: email/p
 ## Commands
 
 ```sh
-make test                                   # go test -race ./...
+make test                                   # go test -race ./...  (Redis tests use miniredis)
+REDIS_URL=redis://localhost:6379/15 go test ./internal/ratelimit/...   # also run against a real Redis
 go test ./internal/auth -run TestLockout    # single test
 make lint                                   # buf lint + go vet + gofmt check
 make generate                               # regenerate gen/ after editing proto/
@@ -27,7 +28,12 @@ buf, protoc-gen-go and protoc-gen-connect-go are pinned as `tool` dependencies i
   - Atomicity is limited to conditional single-record writes (`ConsumeLoginToken`, `UseRefreshToken`).
   - Bulk invalidation goes through a counter (`User.SessionGeneration` must equal `Session.Generation`), never through multi-row updates.
   - Every implementation must pass `internal/store/storetest.Run` (includes concurrency tests). Add new backends as a package plus a one-line conformance test.
-- **Other swappable dependencies**: `mail.Sender` (log/SMTP) and `ratelimit.Limiter` (in-memory, per process; a multi-instance deployment needs a shared implementation).
+- **Rate limiting**: `ratelimit.Limiter` has two implementations, chosen with `RATE_LIMIT_DRIVER`:
+  - `ratelimit.Memory`: per process, the default.
+  - `redislimit`: shared across instances. It uses fixed windows aligned to the epoch and a single `MULTI` of INCR+PEXPIRE per call, and hashes keys so IPs and emails aren't stored in Redis.
+
+  Both must pass `internal/ratelimit/ratelimittest.Run`. Limiter errors **fail open** in `auth` (logged), because a Redis outage must not become a login outage; account lockout in the store remains the brute-force backstop. Startup, however, fails if Redis is unreachable.
+- **Mail**: `mail.Sender` (log/SMTP) is swappable.
 
 ## Security invariants (preserve these)
 
