@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package stdlogin.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// AuthService issues JWT access tokens for a user. It is concerned only with
+// proving who the user is (password or emailed one-time token) and with the
+// security of the resulting sessions.
+//
+// Accounts are created implicitly the first time an email address completes an
+// email login (when signup is enabled), so a password can only ever be attached
+// to an address whose ownership has been proven.
+service AuthService {
+  // LoginWithPassword exchanges an email/password pair for tokens. Every
+  // failure (unknown email, wrong password, no password set, locked account)
+  // returns the same UNAUTHENTICATED error.
+  rpc LoginWithPassword(LoginWithPasswordRequest) returns (LoginWithPasswordResponse) {}
+
+  // StartEmailLogin emails a short-lived, single-use login token to the
+  // address. It always succeeds (unless rate limited) so it cannot be used to
+  // discover which addresses have accounts.
+  rpc StartEmailLogin(StartEmailLoginRequest) returns (StartEmailLoginResponse) {}
+
+  // CompleteEmailLogin exchanges an emailed login token for tokens.
+  rpc CompleteEmailLogin(CompleteEmailLoginRequest) returns (CompleteEmailLoginResponse) {}
+
+  // RefreshSession exchanges a refresh token for a new token pair. Refresh
+  // tokens are single use; presenting one twice revokes the whole session.
+  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse) {}
+
+  // Logout revokes the session the refresh token belongs to.
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {}
+
+  // SetPassword sets or replaces the caller's password. Requires an
+  // "Authorization: Bearer <access token>" header from a recent login (not a
+  // refresh). All other sessions are revoked.
+  rpc SetPassword(SetPasswordRequest) returns (SetPasswordResponse) {}
+}
+
+message TokenPair {
+  // Signed JWT (EdDSA). Verify with the keys at /.well-known/jwks.json.
+  string access_token = 1;
+  google.protobuf.Timestamp access_token_expires_at = 2;
+  // Opaque, single-use token for RefreshSession and Logout.
+  string refresh_token = 3;
+  google.protobuf.Timestamp refresh_token_expires_at = 4;
+  string token_type = 5;
+  string user_id = 6;
+}
+
+message LoginWithPasswordRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginWithPasswordResponse {
+  TokenPair tokens = 1;
+}
+
+message StartEmailLoginRequest {
+  string email = 1;
+}
+
+message StartEmailLoginResponse {}
+
+message CompleteEmailLoginRequest {
+  string login_token = 1;
+}
+
+message CompleteEmailLoginResponse {
+  TokenPair tokens = 1;
+}
+
+message RefreshSessionRequest {
+  string refresh_token = 1;
+}
+
+message RefreshSessionResponse {
+  TokenPair tokens = 1;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {}
+
+message SetPasswordRequest {
+  string new_password = 1;
+}
+
+message SetPasswordResponse {
+  // A fresh token pair for the calling client; all prior sessions are revoked.
+  TokenPair tokens = 1;
+}
