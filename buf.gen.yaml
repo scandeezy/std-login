@@ -2,6 +2,9 @@ version: v2
 clean: true
 managed:
   enabled: true
+  disable:
+    - file_option: go_package
+      module: buf.build/googleapis/googleapis
   override:
     - file_option: go_package_prefix
       value: github.com/scandeezy/std-login/gen

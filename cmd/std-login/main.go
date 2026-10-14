@@ -107,12 +107,17 @@ func run(logger *slog.Logger) error {
 
 	// Serve HTTP/1.1 plus cleartext HTTP/2 so gRPC clients work without TLS
 	// termination here; terminate TLS at the load balancer.
+	handler, err := server.Handler(svc, issuer)
+	if err != nil {
+		return err
+	}
+
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           server.Handler(svc, issuer),
+		Handler:           handler,
 		Protocols:         &protocols,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

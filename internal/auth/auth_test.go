@@ -12,8 +12,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	stdloginv1 "github.com/scandeezy/std-login/gen/stdlogin/v1"
-	"github.com/scandeezy/std-login/gen/stdlogin/v1/stdloginv1connect"
+	apiv1 "github.com/scandeezy/std-login/gen/api/v1"
+	"github.com/scandeezy/std-login/gen/api/v1/apiv1connect"
 	"github.com/scandeezy/std-login/internal/auth"
 	"github.com/scandeezy/std-login/internal/password"
 	"github.com/scandeezy/std-login/internal/ratelimit"
@@ -63,7 +63,7 @@ func (o *outbox) none(t *testing.T) {
 }
 
 type harness struct {
-	client stdloginv1connect.AuthServiceClient
+	client apiv1connect.AuthServiceClient
 	clock  *clock
 	mail   *outbox
 	issuer *token.Issuer
@@ -91,10 +91,14 @@ func newHarness(t *testing.T, mod func(*auth.Config)) *harness {
 	if mod != nil {
 		mod(&cfg)
 	}
-	srv := httptest.NewServer(server.Handler(auth.New(cfg), iss))
+	h, err := server.Handler(auth.New(cfg), iss)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return &harness{
-		client: stdloginv1connect.NewAuthServiceClient(srv.Client(), srv.URL),
+		client: apiv1connect.NewAuthServiceClient(srv.Client(), srv.URL),
 		clock:  clk,
 		mail:   ob,
 		issuer: iss,
@@ -109,21 +113,21 @@ func wantCode(t *testing.T, err error, code connect.Code) {
 	}
 }
 
-func (h *harness) emailLogin(t *testing.T, email string) *stdloginv1.TokenPair {
+func (h *harness) emailLogin(t *testing.T, email string) *apiv1.TokenPair {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := h.client.StartEmailLogin(ctx, connect.NewRequest(&stdloginv1.StartEmailLoginRequest{Email: email})); err != nil {
+	if _, err := h.client.StartEmailLogin(ctx, connect.NewRequest(&apiv1.StartEmailLoginRequest{Email: email})); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := h.client.CompleteEmailLogin(ctx, connect.NewRequest(&stdloginv1.CompleteEmailLoginRequest{LoginToken: h.mail.next(t)}))
+	resp, err := h.client.CompleteEmailLogin(ctx, connect.NewRequest(&apiv1.CompleteEmailLoginRequest{LoginToken: h.mail.next(t)}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return resp.Msg.Tokens
 }
 
-func (h *harness) setPassword(t *testing.T, access, pw string) (*stdloginv1.TokenPair, error) {
-	req := connect.NewRequest(&stdloginv1.SetPasswordRequest{NewPassword: pw})
+func (h *harness) setPassword(t *testing.T, access, pw string) (*apiv1.TokenPair, error) {
+	req := connect.NewRequest(&apiv1.SetPasswordRequest{NewPassword: pw})
 	req.Header().Set("Authorization", "Bearer "+access)
 	resp, err := h.client.SetPassword(context.Background(), req)
 	if err != nil {
@@ -132,16 +136,16 @@ func (h *harness) setPassword(t *testing.T, access, pw string) (*stdloginv1.Toke
 	return resp.Msg.Tokens, nil
 }
 
-func (h *harness) passwordLogin(email, pw string) (*stdloginv1.TokenPair, error) {
-	resp, err := h.client.LoginWithPassword(context.Background(), connect.NewRequest(&stdloginv1.LoginWithPasswordRequest{Email: email, Password: pw}))
+func (h *harness) passwordLogin(email, pw string) (*apiv1.TokenPair, error) {
+	resp, err := h.client.LoginWithPassword(context.Background(), connect.NewRequest(&apiv1.LoginWithPasswordRequest{Email: email, Password: pw}))
 	if err != nil {
 		return nil, err
 	}
 	return resp.Msg.Tokens, nil
 }
 
-func (h *harness) refresh(rt string) (*stdloginv1.TokenPair, error) {
-	resp, err := h.client.RefreshSession(context.Background(), connect.NewRequest(&stdloginv1.RefreshSessionRequest{RefreshToken: rt}))
+func (h *harness) refresh(rt string) (*apiv1.TokenPair, error) {
+	resp, err := h.client.RefreshSession(context.Background(), connect.NewRequest(&apiv1.RefreshSessionRequest{RefreshToken: rt}))
 	if err != nil {
 		return nil, err
 	}
@@ -173,18 +177,18 @@ func TestLoginTokenSingleUseAndExpiry(t *testing.T) {
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	complete := func(tok string) error {
-		_, err := h.client.CompleteEmailLogin(ctx, connect.NewRequest(&stdloginv1.CompleteEmailLoginRequest{LoginToken: tok}))
+		_, err := h.client.CompleteEmailLogin(ctx, connect.NewRequest(&apiv1.CompleteEmailLoginRequest{LoginToken: tok}))
 		return err
 	}
 
-	h.client.StartEmailLogin(ctx, connect.NewRequest(&stdloginv1.StartEmailLoginRequest{Email: "a@example.com"}))
+	h.client.StartEmailLogin(ctx, connect.NewRequest(&apiv1.StartEmailLoginRequest{Email: "a@example.com"}))
 	tok := h.mail.next(t)
 	if err := complete(tok); err != nil {
 		t.Fatal(err)
 	}
 	wantCode(t, complete(tok), connect.CodeUnauthenticated)
 
-	h.client.StartEmailLogin(ctx, connect.NewRequest(&stdloginv1.StartEmailLoginRequest{Email: "a@example.com"}))
+	h.client.StartEmailLogin(ctx, connect.NewRequest(&apiv1.StartEmailLoginRequest{Email: "a@example.com"}))
 	tok = h.mail.next(t)
 	h.clock.Add(10 * time.Minute)
 	wantCode(t, complete(tok), connect.CodeUnauthenticated)
@@ -194,7 +198,7 @@ func TestLoginTokenSingleUseAndExpiry(t *testing.T) {
 
 func TestSignupDisabled(t *testing.T) {
 	h := newHarness(t, func(c *auth.Config) { c.AllowSignup = false })
-	_, err := h.client.StartEmailLogin(context.Background(), connect.NewRequest(&stdloginv1.StartEmailLoginRequest{Email: "new@example.com"}))
+	_, err := h.client.StartEmailLogin(context.Background(), connect.NewRequest(&apiv1.StartEmailLoginRequest{Email: "new@example.com"}))
 	if err != nil {
 		t.Fatalf("StartEmailLogin must succeed for unknown address, got %v", err)
 	}
@@ -204,7 +208,7 @@ func TestSignupDisabled(t *testing.T) {
 func TestInvalidEmail(t *testing.T) {
 	h := newHarness(t, nil)
 	for _, e := range []string{"", "nope", "Bob <bob@example.com>", "a@b@c"} {
-		_, err := h.client.StartEmailLogin(context.Background(), connect.NewRequest(&stdloginv1.StartEmailLoginRequest{Email: e}))
+		_, err := h.client.StartEmailLogin(context.Background(), connect.NewRequest(&apiv1.StartEmailLoginRequest{Email: e}))
 		wantCode(t, err, connect.CodeInvalidArgument)
 	}
 }
@@ -317,7 +321,7 @@ func TestLogout(t *testing.T) {
 	other := h.emailLogin(t, "a@example.com")
 	ctx := context.Background()
 
-	if _, err := h.client.Logout(ctx, connect.NewRequest(&stdloginv1.LogoutRequest{RefreshToken: tp.RefreshToken})); err != nil {
+	if _, err := h.client.Logout(ctx, connect.NewRequest(&apiv1.LogoutRequest{RefreshToken: tp.RefreshToken})); err != nil {
 		t.Fatal(err)
 	}
 	_, err := h.refresh(tp.RefreshToken)
@@ -327,7 +331,7 @@ func TestLogout(t *testing.T) {
 		t.Fatalf("other session: %v", err)
 	}
 	// Idempotent / unknown tokens are fine.
-	if _, err := h.client.Logout(ctx, connect.NewRequest(&stdloginv1.LogoutRequest{RefreshToken: "bogus"})); err != nil {
+	if _, err := h.client.Logout(ctx, connect.NewRequest(&apiv1.LogoutRequest{RefreshToken: "bogus"})); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -339,7 +343,7 @@ func TestRateLimits(t *testing.T) {
 	})
 	ctx := context.Background()
 	start := func(email string) error {
-		_, err := h.client.StartEmailLogin(ctx, connect.NewRequest(&stdloginv1.StartEmailLoginRequest{Email: email}))
+		_, err := h.client.StartEmailLogin(ctx, connect.NewRequest(&apiv1.StartEmailLoginRequest{Email: email}))
 		return err
 	}
 	if err := start("a@example.com"); err != nil {
@@ -372,7 +376,11 @@ func TestRateLimiterErrorsFailOpen(t *testing.T) {
 
 func TestJWKSEndpoint(t *testing.T) {
 	iss := token.NewIssuer(token.GenerateKey(), "test", nil, time.Minute)
-	srv := httptest.NewServer(server.Handler(auth.New(auth.Config{Issuer: iss}), iss))
+	h, err := server.Handler(auth.New(auth.Config{Issuer: iss}), iss)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/.well-known/jwks.json")
 	if err != nil {

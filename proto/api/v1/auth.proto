@@ -1,8 +1,9 @@
 syntax = "proto3";
 
-package stdlogin.v1;
+package api.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
 
 // AuthService issues JWT access tokens for a user. It is concerned only with
 // proving who the user is (password or emailed one-time token) and with the
@@ -15,27 +16,57 @@ service AuthService {
   // LoginWithPassword exchanges an email/password pair for tokens. Every
   // failure (unknown email, wrong password, no password set, locked account)
   // returns the same UNAUTHENTICATED error.
-  rpc LoginWithPassword(LoginWithPasswordRequest) returns (LoginWithPasswordResponse) {}
+  rpc LoginWithPassword(LoginWithPasswordRequest) returns (LoginWithPasswordResponse) {
+    option (google.api.http) = {
+      post: "/api/session/pwlogin"
+      body: "*"
+    };
+  }
 
   // StartEmailLogin emails a short-lived, single-use login token to the
   // address. It always succeeds (unless rate limited) so it cannot be used to
   // discover which addresses have accounts.
-  rpc StartEmailLogin(StartEmailLoginRequest) returns (StartEmailLoginResponse) {}
+  rpc StartEmailLogin(StartEmailLoginRequest) returns (StartEmailLoginResponse) {
+    option (google.api.http) = {
+      post: "/api/session/emlogin"
+      body: "*"
+    };
+  }
 
   // CompleteEmailLogin exchanges an emailed login token for tokens.
-  rpc CompleteEmailLogin(CompleteEmailLoginRequest) returns (CompleteEmailLoginResponse) {}
+  rpc CompleteEmailLogin(CompleteEmailLoginRequest) returns (CompleteEmailLoginResponse) {
+    option (google.api.http) = {
+      post: "/api/session/emcomplete"
+      body: "*"
+    };
+  }
 
   // RefreshSession exchanges a refresh token for a new token pair. Refresh
   // tokens are single use; presenting one twice revokes the whole session.
-  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse) {}
+  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse) {
+    option (google.api.http) = {
+      post: "/api/session/refresh"
+      body: "*"
+    };
+  }
 
   // Logout revokes the session the refresh token belongs to.
-  rpc Logout(LogoutRequest) returns (LogoutResponse) {}
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/api/session/logout"
+      body: "*"
+    };
+  }
 
   // SetPassword sets or replaces the caller's password. Requires an
   // "Authorization: Bearer <access token>" header from a recent login (not a
   // refresh). All other sessions are revoked.
-  rpc SetPassword(SetPasswordRequest) returns (SetPasswordResponse) {}
+  rpc SetPassword(SetPasswordRequest) returns (SetPasswordResponse) {
+    option (google.api.http) = {
+      post: "/api/session/setpw"
+      body: "*"
+    };
+  }
 }
 
 message TokenPair {

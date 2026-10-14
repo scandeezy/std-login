@@ -21,7 +21,7 @@ buf, protoc-gen-go and protoc-gen-connect-go are pinned as `tool` dependencies i
 
 ## Architecture
 
-- **API contract**: `proto/stdlogin/v1/auth.proto` is the source of truth. It is served with connect-go, so each RPC is reachable as gRPC, gRPC-Web, and plain HTTP/JSON at `POST /stdlogin.v1.AuthService/<Method>`. Changes must stay wire-compatible (`buf breaking` is configured with FILE rules).
+- **API contract**: `proto/api/v1/auth.proto` is the source of truth. It is served with connect-go, so each RPC is reachable as gRPC, gRPC-Web, and plain HTTP/JSON at `POST /api.v1.AuthService/<Method>`. RPCs with a `google.api.http` annotation are also served as REST at that path (e.g. `POST /api/session/pwlogin`) through a Vanguard transcoder (`connectrpc.com/vanguard`, pinned to v0.4.x because v0.5+ requires connect-go v2). Other paths fall through to Vanguard, while RPC paths go straight to Connect, because Vanguard would treat a JSON POST without `Connect-Protocol-Version` as REST. Changes must stay wire-compatible (`buf breaking` is configured with FILE rules).
 - **Request flow**: `cmd/std-login/main.go` loads config from env (`internal/config`) and wires the dependencies into `auth.Config`. `internal/server` mounts the handler plus `/.well-known/jwks.json` and `/healthz`. All business logic is in `internal/auth/auth.go`.
 - **Storage facade**: `internal/store/store.go` defines `store.Store`; implementations are `memory` (tests) and `sqlite` (local dev). The interface is deliberately NoSQL-friendly, because production may use MySQL or a NoSQL store. When changing it, keep to these rules:
   - Single-record operations by key only, with no joins or multi-record transactions.
@@ -47,7 +47,7 @@ These are documented at the top of `internal/auth/auth.go` and covered by `inter
 
 ## CORS: intentionally not supported
 
-The service sends no CORS headers, so browsers can only call it from the same origin (e.g. behind a reverse proxy that routes `/stdlogin.v1.AuthService/*` on the app's domain). Cross-origin JSON/Authorization requests fail the browser's preflight. Preflight-free "simple" requests (form/text bodies) are rejected by Connect with 415 before any RPC runs. Don't add CORS middleware, and make sure no proxy, gateway or CDN in front adds `Access-Control-Allow-Origin`, unless the product decision changes. `TestNoCORS` in `internal/server/server_test.go` enforces this. If CORS is ever wanted, decide where browsers keep the refresh token before enabling it.
+The service sends no CORS headers, so browsers can only call it from the same origin (e.g. behind a reverse proxy that routes `/api.v1.AuthService/*` on the app's domain). Cross-origin JSON/Authorization requests fail the browser's preflight. Preflight-free "simple" requests (form/text bodies) are rejected by Connect with 415 before any RPC runs. Don't add CORS middleware, and make sure no proxy, gateway or CDN in front adds `Access-Control-Allow-Origin`, unless the product decision changes. `TestNoCORS` in `internal/server/server_test.go` enforces this. If CORS is ever wanted, decide where browsers keep the refresh token before enabling it.
 
 ## Testing conventions
 

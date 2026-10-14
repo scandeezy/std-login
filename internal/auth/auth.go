@@ -1,4 +1,4 @@
-// Package auth implements stdlogin.v1.AuthService.
+// Package auth implements api.v1.AuthService.
 //
 // Security properties maintained here (keep them when changing this code):
 //   - No account enumeration: every password-login failure returns the same
@@ -25,8 +25,8 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	stdloginv1 "github.com/scandeezy/std-login/gen/stdlogin/v1"
-	"github.com/scandeezy/std-login/gen/stdlogin/v1/stdloginv1connect"
+	apiv1 "github.com/scandeezy/std-login/gen/api/v1"
+	"github.com/scandeezy/std-login/gen/api/v1/apiv1connect"
 	mailer "github.com/scandeezy/std-login/internal/mail"
 	"github.com/scandeezy/std-login/internal/password"
 	"github.com/scandeezy/std-login/internal/ratelimit"
@@ -79,7 +79,7 @@ type Service struct {
 	cfg Config
 }
 
-var _ stdloginv1connect.AuthServiceHandler = (*Service)(nil)
+var _ apiv1connect.AuthServiceHandler = (*Service)(nil)
 
 func New(cfg Config) *Service {
 	if cfg.Now == nil {
@@ -156,7 +156,7 @@ func (s *Service) allow(ctx context.Context, l ratelimit.Limiter, key string, no
 	return ok
 }
 
-func (s *Service) LoginWithPassword(ctx context.Context, req *connect.Request[stdloginv1.LoginWithPasswordRequest]) (*connect.Response[stdloginv1.LoginWithPasswordResponse], error) {
+func (s *Service) LoginWithPassword(ctx context.Context, req *connect.Request[apiv1.LoginWithPasswordRequest]) (*connect.Response[apiv1.LoginWithPasswordResponse], error) {
 	now := s.now()
 	if !s.allowIP(ctx, req, now) {
 		return nil, errRateLimited
@@ -218,10 +218,10 @@ func (s *Service) LoginWithPassword(ctx context.Context, req *connect.Request[st
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&stdloginv1.LoginWithPasswordResponse{Tokens: tp}), nil
+	return connect.NewResponse(&apiv1.LoginWithPasswordResponse{Tokens: tp}), nil
 }
 
-func (s *Service) StartEmailLogin(ctx context.Context, req *connect.Request[stdloginv1.StartEmailLoginRequest]) (*connect.Response[stdloginv1.StartEmailLoginResponse], error) {
+func (s *Service) StartEmailLogin(ctx context.Context, req *connect.Request[apiv1.StartEmailLoginRequest]) (*connect.Response[apiv1.StartEmailLoginResponse], error) {
 	now := s.now()
 	if !s.allowIP(ctx, req, now) {
 		return nil, errRateLimited
@@ -230,7 +230,7 @@ func (s *Service) StartEmailLogin(ctx context.Context, req *connect.Request[stdl
 	if !ok {
 		return nil, errInvalidEmail
 	}
-	resp := connect.NewResponse(&stdloginv1.StartEmailLoginResponse{})
+	resp := connect.NewResponse(&apiv1.StartEmailLoginResponse{})
 
 	// Over the per-address limit: report success anyway so the response
 	// says nothing about the address, but send nothing (anti mail-bombing).
@@ -278,7 +278,7 @@ func loginLink(base, tok string) (string, error) {
 	return u.String(), nil
 }
 
-func (s *Service) CompleteEmailLogin(ctx context.Context, req *connect.Request[stdloginv1.CompleteEmailLoginRequest]) (*connect.Response[stdloginv1.CompleteEmailLoginResponse], error) {
+func (s *Service) CompleteEmailLogin(ctx context.Context, req *connect.Request[apiv1.CompleteEmailLoginRequest]) (*connect.Response[apiv1.CompleteEmailLoginResponse], error) {
 	now := s.now()
 	if !s.allowIP(ctx, req, now) {
 		return nil, errRateLimited
@@ -308,7 +308,7 @@ func (s *Service) CompleteEmailLogin(ctx context.Context, req *connect.Request[s
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&stdloginv1.CompleteEmailLoginResponse{Tokens: tp}), nil
+	return connect.NewResponse(&apiv1.CompleteEmailLoginResponse{Tokens: tp}), nil
 }
 
 func (s *Service) createUser(ctx context.Context, email string, now time.Time) (*store.User, error) {
@@ -325,7 +325,7 @@ func (s *Service) createUser(ctx context.Context, email string, now time.Time) (
 	return u, nil
 }
 
-func (s *Service) RefreshSession(ctx context.Context, req *connect.Request[stdloginv1.RefreshSessionRequest]) (*connect.Response[stdloginv1.RefreshSessionResponse], error) {
+func (s *Service) RefreshSession(ctx context.Context, req *connect.Request[apiv1.RefreshSessionRequest]) (*connect.Response[apiv1.RefreshSessionResponse], error) {
 	now := s.now()
 	rt, err := s.cfg.Store.UseRefreshToken(ctx, token.Hash(req.Msg.GetRefreshToken()), now)
 	switch {
@@ -353,7 +353,7 @@ func (s *Service) RefreshSession(ctx context.Context, req *connect.Request[stdlo
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&stdloginv1.RefreshSessionResponse{Tokens: tp}), nil
+	return connect.NewResponse(&apiv1.RefreshSessionResponse{Tokens: tp}), nil
 }
 
 // liveSession loads a session and its user, failing with errInvalidToken if
@@ -380,9 +380,9 @@ func (s *Service) liveSession(ctx context.Context, id string) (*store.Session, *
 	return sess, u, nil
 }
 
-func (s *Service) Logout(ctx context.Context, req *connect.Request[stdloginv1.LogoutRequest]) (*connect.Response[stdloginv1.LogoutResponse], error) {
+func (s *Service) Logout(ctx context.Context, req *connect.Request[apiv1.LogoutRequest]) (*connect.Response[apiv1.LogoutResponse], error) {
 	now := s.now()
-	resp := connect.NewResponse(&stdloginv1.LogoutResponse{})
+	resp := connect.NewResponse(&apiv1.LogoutResponse{})
 	rt, err := s.cfg.Store.UseRefreshToken(ctx, token.Hash(req.Msg.GetRefreshToken()), now)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -396,7 +396,7 @@ func (s *Service) Logout(ctx context.Context, req *connect.Request[stdloginv1.Lo
 	return resp, nil
 }
 
-func (s *Service) SetPassword(ctx context.Context, req *connect.Request[stdloginv1.SetPasswordRequest]) (*connect.Response[stdloginv1.SetPasswordResponse], error) {
+func (s *Service) SetPassword(ctx context.Context, req *connect.Request[apiv1.SetPasswordRequest]) (*connect.Response[apiv1.SetPasswordResponse], error) {
 	now := s.now()
 	raw, ok := strings.CutPrefix(req.Header().Get("Authorization"), "Bearer ")
 	if !ok {
@@ -436,10 +436,10 @@ func (s *Service) SetPassword(ctx context.Context, req *connect.Request[stdlogin
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&stdloginv1.SetPasswordResponse{Tokens: tp}), nil
+	return connect.NewResponse(&apiv1.SetPasswordResponse{Tokens: tp}), nil
 }
 
-func (s *Service) startSession(ctx context.Context, u *store.User, method string, authTime, now time.Time) (*stdloginv1.TokenPair, error) {
+func (s *Service) startSession(ctx context.Context, u *store.User, method string, authTime, now time.Time) (*apiv1.TokenPair, error) {
 	sess := &store.Session{ID: token.NewID(), UserID: u.ID, AuthTime: authTime, AuthMethod: method, Generation: u.SessionGeneration, CreatedAt: now}
 	if err := s.cfg.Store.CreateSession(ctx, sess); err != nil {
 		return nil, s.internal(ctx, "create session", err)
@@ -447,7 +447,7 @@ func (s *Service) startSession(ctx context.Context, u *store.User, method string
 	return s.issueTokens(ctx, u, sess, now)
 }
 
-func (s *Service) issueTokens(ctx context.Context, u *store.User, sess *store.Session, now time.Time) (*stdloginv1.TokenPair, error) {
+func (s *Service) issueTokens(ctx context.Context, u *store.User, sess *store.Session, now time.Time) (*apiv1.TokenPair, error) {
 	refresh, hash := token.NewOpaque()
 	rt := &store.RefreshToken{Hash: hash, SessionID: sess.ID, UserID: u.ID, ExpiresAt: now.Add(s.cfg.RefreshTTL), CreatedAt: now}
 	if err := s.cfg.Store.CreateRefreshToken(ctx, rt); err != nil {
@@ -463,7 +463,7 @@ func (s *Service) issueTokens(ctx context.Context, u *store.User, sess *store.Se
 	if err != nil {
 		return nil, s.internal(ctx, "sign access token", fmt.Errorf("sign: %w", err))
 	}
-	return &stdloginv1.TokenPair{
+	return &apiv1.TokenPair{
 		AccessToken:           access,
 		AccessTokenExpiresAt:  timestamppb.New(exp),
 		RefreshToken:          refresh,
